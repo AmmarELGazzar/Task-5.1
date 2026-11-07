@@ -1,11 +1,12 @@
+
 import dotenv from 'dotenv';
 dotenv.config();
+
 import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
 import { connectDB } from '../config/db.js';
 import { Instructor } from '../models/Instructor.js';
 
-// Seed data for the Instructor Portal NoSQL injection lab.
-// Passwords are plaintext ON PURPOSE (see Instructor model / Flow.md).
 const instructors = [
   {
     name: 'Prof. Alice Smith',
@@ -35,7 +36,6 @@ const instructors = [
     privatePhone: '+1-555-0103'
   },
   {
-    // The high-value target: the only superadmin, holding the API key.
     name: 'Portal Administrator',
     username: 'admin',
     password: 'S3cr3t-Admin-Pw!',
@@ -48,16 +48,27 @@ const instructors = [
 ];
 
 async function run() {
-  await connectDB();
-  await Instructor.deleteMany({});
-  const created = await Instructor.insertMany(instructors);
-  console.log(`Seeded ${created.length} instructor(s):`);
-  for (const i of created) {
-    console.log(`  - ${i.username} (${i.role})`);
+  try {
+    await connectDB();
+
+    // Hash passwords before storing them
+    for (const instructor of instructors) {
+      instructor.password = await bcrypt.hash(instructor.password, 10);
+    }
+
+    await Instructor.deleteMany({});
+    const created = await Instructor.insertMany(instructors);
+
+    console.log(`Seeded ${created.length} instructor(s):`);
+
+    for (const instructor of created) {
+      console.log(`  - ${instructor.username} (${instructor.role})`);
+    }
+
+    console.log('Done.');
+  } finally {
+    await mongoose.disconnect();
   }
-  await mongoose.disconnect();
-  console.log('Done.');
-  process.exit(0);
 }
 
 run().catch((err) => {
