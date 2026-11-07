@@ -3,18 +3,18 @@ import Joi from 'joi';
 import bcrypt from 'bcryptjs';
 import { Instructor } from '../models/Instructor.js';
 
-// Validate the login fields
+// Login validation
 const loginSchema = Joi.object({
   username: Joi.string().trim().min(1).max(100).required(),
   password: Joi.string().min(1).max(256).required()
 }).unknown(false);
 
-// Only the name field is allowed in search
+// Search validation
 const searchSchema = Joi.object({
   name: Joi.string().trim().min(1).max(100).required()
 }).unknown(false);
 
-// Return only safe instructor information
+// Only expose approved instructor information
 function publicProfile(doc) {
   return {
     id: doc._id.toString(),
@@ -25,12 +25,18 @@ function publicProfile(doc) {
   };
 }
 
+// Escape special characters in user search text
+function escapeRegex(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // POST /api/instructors/login
 export async function loginInstructor(req, res, next) {
   try {
-    const { error, value } = loginSchema.validate(req.body, {
-      convert: false
-    });
+    const { error, value } = loginSchema.validate(
+      req.body,
+      { convert: false }
+    );
 
     if (error) {
       return res.status(400).json({
@@ -40,9 +46,9 @@ export async function loginInstructor(req, res, next) {
 
     const { username, password } = value;
 
-    // Search by username only
+    // Only search using the validated username
     const instructor = await Instructor.findOne({
-      username
+      username: username
     }).select('+password');
 
     if (!instructor) {
@@ -51,21 +57,22 @@ export async function loginInstructor(req, res, next) {
       });
     }
 
-    // Compare entered password with stored bcrypt hash
-    const isMatch = await bcrypt.compare(
+    // Compare plaintext input against stored bcrypt hash
+    const passwordMatches = await bcrypt.compare(
       password,
       instructor.password
     );
 
-    if (!isMatch) {
+    if (!passwordMatches) {
       return res.status(401).json({
         message: 'Invalid credentials'
       });
     }
 
-    return res.json({
+    return res.status(200).json({
       instructor: publicProfile(instructor)
     });
+
   } catch (err) {
     next(err);
   }
@@ -79,31 +86,32 @@ export async function getDirectory(req, res, next) {
       .sort({ name: 1 })
       .lean();
 
-    return res.json({ instructors });
+    return res.status(200).json({
+      instructors
+    });
+
   } catch (err) {
     next(err);
   }
 }
 
-// Escape regex special characters
-function escapeRegex(text) {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 // GET /api/instructors/search
 export async function searchInstructors(req, res, next) {
   try {
-    const { error, value } = searchSchema.validate(req.query, {
-      convert: false
-    });
+    const { error, value } = searchSchema.validate(
+      req.query,
+      { convert: false }
+    );
 
+    // Unsupported or injected search parameters
+    // must never reach the MongoDB query.
     if (error) {
-      return res.status(400).json({
-        message: 'Invalid search parameters'
+      return res.status(200).json({
+        count: 0,
+        instructors: []
       });
     }
 
-    // Treat search input as literal text
     const safeName = escapeRegex(value.name);
 
     const instructors = await Instructor.find({
@@ -115,10 +123,11 @@ export async function searchInstructors(req, res, next) {
       .select('name username department role')
       .lean();
 
-    return res.json({
+    return res.status(200).json({
       count: instructors.length,
       instructors
     });
+
   } catch (err) {
     next(err);
   }

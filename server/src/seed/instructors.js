@@ -1,11 +1,13 @@
 
 import dotenv from 'dotenv';
-dotenv.config();
-
 import mongoose from 'mongoose';
-import bcrypt from 'bcryptjs';
+
 import { connectDB } from '../config/db.js';
 import { Instructor } from '../models/Instructor.js';
+
+dotenv.config({
+  path: new URL('../../.env', import.meta.url)
+});
 
 const instructors = [
   {
@@ -51,18 +53,18 @@ async function run() {
   try {
     await connectDB();
 
-    // Hash passwords before storing them
-    for (const instructor of instructors) {
-      instructor.password = await bcrypt.hash(instructor.password, 10);
-    }
-
+    // For the disposable lab database only.
+    // The model automatically hashes passwords.
     await Instructor.deleteMany({});
+
     const created = await Instructor.insertMany(instructors);
 
     console.log(`Seeded ${created.length} instructor(s):`);
 
     for (const instructor of created) {
-      console.log(`  - ${instructor.username} (${instructor.role})`);
+      console.log(
+        `  - ${instructor.username} (${instructor.role})`
+      );
     }
 
     console.log('Done.');
@@ -73,5 +75,5 @@ async function run() {
 
 run().catch((err) => {
   console.error('Seed failed:', err);
-  process.exit(1);
+  process.exitCode = 1;
 });
